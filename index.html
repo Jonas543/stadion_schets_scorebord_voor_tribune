@@ -1,0 +1,753 @@
+
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>De wedstrijd achter de wedstrijd — 3D schets</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #e9e7e5;
+      color: #243139;
+    }
+
+    #view {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    header,
+    .panel {
+      position: absolute;
+      z-index: 2;
+      background: #ffffffed;
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 35px #0002;
+    }
+
+    header {
+      top: 18px;
+      left: 18px;
+    }
+
+    header b {
+      font-size: 18px;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      color: #65747e;
+      font-size: 12px;
+    }
+
+    .panel {
+      bottom: 18px;
+      left: 18px;
+      width: min(345px, calc(100vw - 36px));
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      margin: 14px 0 5px;
+    }
+
+    select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd4da;
+      border-radius: 8px;
+      background: white;
+    }
+
+    .value {
+      font-size: 26px;
+      font-weight: bold;
+      margin: 14px 0 5px;
+    }
+
+    .small {
+      font-size: 11px;
+      color: #697982;
+      line-height: 1.5;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: #24434a;
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    #error {
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      max-width: 420px;
+      z-index: 3;
+      background: #fff3ed;
+      color: #8a3322;
+      padding: 15px;
+      border-radius: 10px;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Three.js-container -->
+  <div id="view"></div>
+
+  <!-- Titel -->
+  <header>
+    <b>De wedstrijd achter de wedstrijd</b>
+    <p>
+      Live Three.js-schets · sleep om rond te kijken ·
+      scroll om te zoomen
+    </p>
+  </header>
+
+  <!-- Foutmelding -->
+  <div id="error"></div>
+
+  <!-- Bedieningspaneel -->
+  <div class="panel">
+    <b>Organiseer jouw wedstrijd</b>
+
+    <label for="transport">Supportersvervoer</label>
+    <select id="transport">
+      <option value="bus">Meer supporters met de bus</option>
+      <option value="car">Meer supporters met de auto</option>
+      <option value="bike">Meer supporters met de fiets</option>
+    </select>
+
+    <label for="light">Stadionverlichting</label>
+    <select id="light">
+      <option value="led">Energiezuinige LED-verlichting</option>
+      <option value="old">Traditionele verlichting</option>
+    </select>
+
+    <label for="food">Catering</label>
+    <select id="food">
+      <option value="mixed">Gemengd aanbod</option>
+      <option value="veggie">Meer vegetarische opties</option>
+      <option value="meat">Vooral vleesgerechten</option>
+    </select>
+
+    <div class="value" id="co2">23,4 t CO₂e</div>
+
+    <div class="small">
+      Illustratieve waarden, niet gebaseerd op een echte wedstrijd.
+    </div>
+
+    <button id="reset">Opnieuw beginnen</button>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const error = document.getElementById('error');
+
+      // Controleren of Three.js geladen is
+      if (!window.THREE) {
+        error.style.display = 'block';
+        error.textContent =
+          'Three.js kon niet laden. Controleer je internetverbinding of start met Live Server.';
+        return;
+      }
+
+      try {
+
+        // ==========================================
+        // 1. SCENE EN CAMERA
+        // ==========================================
+
+        const THREE = window.THREE;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xe9e7e5);
+        scene.fog = new THREE.Fog(0xe9e7e5, 50, 100);
+
+        const camera = new THREE.PerspectiveCamera(
+          48,
+          innerWidth / innerHeight,
+          0.1,
+          180
+        );
+
+        let az = 0;
+        let el = 0.12;
+        let dist = 31;
+
+        function cameraUpdate() {
+          camera.position.set(
+            Math.sin(az) * dist * Math.cos(el),
+            5 + Math.sin(el) * dist,
+            Math.cos(az) * dist * Math.cos(el)
+          );
+
+          camera.lookAt(0, 3, 0);
+        }
+
+        cameraUpdate();
+
+        // ==========================================
+        // 2. RENDERER
+        // ==========================================
+
+        const renderer = new THREE.WebGLRenderer({
+          antialias: true
+        });
+
+        renderer.setPixelRatio(
+          Math.min(devicePixelRatio, 2)
+        );
+
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+        document
+          .getElementById('view')
+          .appendChild(renderer.domElement);
+
+        // ==========================================
+        // 3. VERLICHTING
+        // ==========================================
+
+        scene.add(
+          new THREE.HemisphereLight(
+            0xffffff,
+            0xb9b5ae,
+            2.1
+          )
+        );
+
+        const sun = new THREE.DirectionalLight(
+          0xffffff,
+          2
+        );
+
+        sun.position.set(-12, 22, 14);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+
+        sun.shadow.camera.left = -28;
+        sun.shadow.camera.right = 28;
+        sun.shadow.camera.top = 28;
+        sun.shadow.camera.bottom = -28;
+
+        scene.add(sun);
+
+        // ==========================================
+        // 4. MATERIALEN
+        // ==========================================
+
+        const mat = (
+          color,
+          emissive = 0x000000,
+          intensity = 0
+        ) => new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.85,
+          emissive,
+          emissiveIntensity: intensity
+        });
+
+        const white = mat(0xf6f4f2);
+        const grey = mat(0xd5d1ce);
+        const dark = mat(0x929ca1);
+        const pitch = mat(0xd9ded9);
+        const line = mat(0xffffff);
+        const warm = mat(
+          0xffe2a2,
+          0xffc16a,
+          0.55
+        );
+
+        // Hulpfunctie om blokken te maken
+        function box(w, h, d, material, x, y, z) {
+          const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(w, h, d),
+            material
+          );
+
+          mesh.position.set(x, y, z);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+
+          scene.add(mesh);
+
+          return mesh;
+        }
+
+        // ==========================================
+        // 5. GROND EN VOETBALVELD
+        // ==========================================
+
+        box(
+          46, 0.2, 40,
+          mat(0xd9d7d3),
+          0, -0.3, 0
+        );
+
+        box(
+          19, 0.13, 30,
+          pitch,
+          0, 0.05, 0
+        );
+
+        // Veldlijnen
+        box(12, 0.015, 0.08, line, 0, 0.14, 0);
+        box(0.08, 0.015, 23, line, 0, 0.14, 0);
+
+        box(12, 0.015, 0.08, line, 0, 0.14, 11.5);
+        box(12, 0.015, 0.08, line, 0, 0.14, -11.5);
+
+        box(0.08, 0.015, 23, line, -6, 0.14, 0);
+        box(0.08, 0.015, 23, line, 6, 0.14, 0);
+
+        // Middencirkel
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(2.2, 2.27, 64),
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            side: THREE.DoubleSide
+          })
+        );
+
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.155;
+
+        scene.add(ring);
+
+        // ==========================================
+        // 6. TRIBUNES
+        // ==========================================
+
+        for (let tier = 0; tier < 12; tier++) {
+
+          const rx = 10.8 + tier * 0.78;
+          const rz = 16.3 + tier * 0.78;
+          const y = 0.25 + tier * 0.43;
+
+          for (let i = 0; i < 96; i++) {
+
+            const a = i * Math.PI * 2 / 96;
+
+            const piece = box(
+              0.82,
+              0.30,
+              0.55,
+              tier % 3 === 0 ? white : grey,
+              rx * Math.cos(a),
+              y,
+              rz * Math.sin(a)
+            );
+
+            piece.rotation.y = -a;
+          }
+        }
+
+        // ==========================================
+        // 7. DAK EN STADIONVERLICHTING
+        // ==========================================
+
+        for (let i = 0; i < 40; i++) {
+
+          const a = i * Math.PI * 2 / 40;
+          const r = 21.1;
+
+          const pole = box(
+            0.17,
+            3.3,
+            0.2,
+            white,
+            r * 0.76 * Math.cos(a),
+            7.2,
+            r * 0.76 * Math.sin(a)
+          );
+
+          pole.rotation.y = -a;
+
+          const lamp = new THREE.PointLight(
+            0xffdca0,
+            0.65,
+            11
+          );
+
+          lamp.position.set(
+            17 * Math.cos(a),
+            6.1,
+            17 * Math.sin(a)
+          );
+
+          scene.add(lamp);
+        }
+
+        // Dakconstructie
+        const roofMat = mat(0xe9e6e4);
+
+        for (let i = 0; i < 64; i++) {
+
+          const a = i * Math.PI * 2 / 64;
+
+          const roofPiece = box(
+            1.9,
+            0.24,
+            2.8,
+            roofMat,
+            20.2 * Math.cos(a),
+            9.1,
+            20.2 * Math.sin(a)
+          );
+
+          roofPiece.rotation.y = -a;
+        }
+
+        // ==========================================
+        // 8. DOELEN
+        // ==========================================
+
+        for (const z of [-11.2, 11.2]) {
+
+          box(3, 0.09, 0.09, white, 0, 0.95, z);
+
+          box(
+            0.09, 1.7, 0.09,
+            white, -1.5, 0.9, z
+          );
+
+          box(
+            0.09, 1.7, 0.09,
+            white, 1.5, 0.9, z
+          );
+        }
+
+        // ==========================================
+        // 9. CO2-SCOREBORD
+        // ==========================================
+
+        // Scorebord vóór de tribunes
+        const board = box(
+          8, 3.5, 0.3,
+          white,
+          0, 7.3, -12.8
+        );
+
+        // Canvas voor dynamische tekst
+        const canvas = document.createElement('canvas');
+
+        canvas.width = 768;
+        canvas.height = 320;
+
+        const ctx = canvas.getContext('2d');
+
+        const tex = new THREE.CanvasTexture(canvas);
+
+        const screen = new THREE.Mesh(
+          new THREE.PlaneGeometry(7.5, 3.05),
+          new THREE.MeshBasicMaterial({
+            map: tex
+          })
+        );
+
+        screen.position.set(0, 7.3, -12.61);
+        scene.add(screen);
+
+        // Scorebord bijwerken
+        function boardUpdate(value) {
+
+          ctx.fillStyle = '#f8f7f5';
+          ctx.fillRect(0, 0, 768, 320);
+
+          ctx.fillStyle = '#545b60';
+
+          ctx.font = 'bold 48px Arial';
+          ctx.fillText('CO₂', 75, 122);
+
+          ctx.font = 'bold 88px Arial';
+          ctx.fillText(
+            value.toFixed(1).replace('.', ',') + ' t',
+            260,
+            135
+          );
+
+          // Achtergrond voortgangsbalk
+          ctx.fillStyle = '#dedbda';
+          ctx.fillRect(70, 210, 620, 36);
+
+          // CO2-indicator
+          ctx.fillStyle =
+            value > 30 ? '#e15b50' : '#e7a55a';
+
+          ctx.fillRect(
+            70,
+            210,
+            620 * Math.min(value / 45, 1),
+            36
+          );
+
+          tex.needsUpdate = true;
+        }
+
+        // ==========================================
+        // 10. AUTO'S EN BUSSEN
+        // ==========================================
+
+        const cars = [];
+
+        function car(x, z, isBus) {
+
+          const group = new THREE.Group();
+
+          const body = new THREE.Mesh(
+            new THREE.BoxGeometry(
+              isBus ? 2.1 : 1.2,
+              0.55,
+              isBus ? 1 : 0.75
+            ),
+            mat(isBus ? 0xd7a75e : 0x8e9ba5)
+          );
+
+          body.position.y = 0.4;
+          group.add(body);
+
+          const top = new THREE.Mesh(
+            new THREE.BoxGeometry(
+              isBus ? 1.7 : 0.7,
+              0.35,
+              isBus ? 0.8 : 0.6
+            ),
+            mat(0xc5d1d7)
+          );
+
+          top.position.y = 0.82;
+          group.add(top);
+
+          group.position.set(x, 0, z);
+
+          scene.add(group);
+          cars.push(group);
+        }
+
+        for (let i = 0; i < 12; i++) {
+          car(
+            -20 + i * 3.4,
+            18 + i % 2 * 2,
+            i % 5 === 0
+          );
+        }
+
+        // ==========================================
+        // 11. INTERACTIEVE KEUZES
+        // ==========================================
+
+        function update() {
+
+          const transport =
+            document.getElementById('transport').value;
+
+          const lighting =
+            document.getElementById('light').value;
+
+          const food =
+            document.getElementById('food').value;
+
+          // Illustratieve CO2-berekening
+          const value =
+            (transport === 'car'
+              ? 30
+              : transport === 'bus'
+                ? 17
+                : 8) +
+
+            (lighting === 'old' ? 8 : 3.4) +
+
+            (food === 'meat'
+              ? 8
+              : food === 'mixed'
+                ? 3
+                : 1);
+
+          // CO2-waarde in interface
+          document.getElementById('co2').textContent =
+            value.toFixed(1).replace('.', ',') + ' t CO₂e';
+
+          // Scorebord bijwerken
+          boardUpdate(value);
+
+          // Aantal zichtbare voertuigen
+          cars.forEach((vehicle, i) => {
+            vehicle.visible =
+              i < (
+                transport === 'car'
+                  ? 12
+                  : transport === 'bus'
+                    ? 6
+                    : 3
+              );
+          });
+
+          // Achtergrondkleur aanpassen
+          scene.background.set(
+            lighting === 'old'
+              ? 0xe8dcd0
+              : 0xe9e7e5
+          );
+        }
+
+        // Events voor dropdowns
+        ['transport', 'light', 'food'].forEach(id => {
+
+          document
+            .getElementById(id)
+            .addEventListener('change', update);
+
+        });
+
+        // Resetknop
+        document.getElementById('reset').onclick = () => {
+
+          document.getElementById('transport').value = 'bus';
+          document.getElementById('light').value = 'led';
+          document.getElementById('food').value = 'mixed';
+
+          update();
+        };
+
+        update();
+
+        // ==========================================
+        // 12. CAMERA-BEDIENING
+        // ==========================================
+
+        let dragging = false;
+        let px = 0;
+        let py = 0;
+
+        renderer.domElement.addEventListener(
+          'pointerdown',
+          e => {
+
+            dragging = true;
+            px = e.clientX;
+            py = e.clientY;
+
+            renderer.domElement.setPointerCapture(
+              e.pointerId
+            );
+          }
+        );
+
+        renderer.domElement.addEventListener(
+          'pointerup',
+          () => {
+            dragging = false;
+          }
+        );
+
+        renderer.domElement.addEventListener(
+          'pointermove',
+          e => {
+
+            if (!dragging) return;
+
+            az -= (e.clientX - px) * 0.006;
+
+            el = Math.max(
+              -0.15,
+              Math.min(
+                0.8,
+                el + (e.clientY - py) * 0.004
+              )
+            );
+
+            px = e.clientX;
+            py = e.clientY;
+
+            cameraUpdate();
+          }
+        );
+
+        // Zoomen met scrollwiel
+        renderer.domElement.addEventListener(
+          'wheel',
+          e => {
+
+            dist = Math.max(
+              16,
+              Math.min(
+                65,
+                dist + e.deltaY * 0.02
+              )
+            );
+
+            cameraUpdate();
+          },
+          { passive: true }
+        );
+
+        // ==========================================
+        // 13. RESPONSIVE
+        // ==========================================
+
+        window.addEventListener('resize', () => {
+
+          camera.aspect =
+            innerWidth / innerHeight;
+
+          camera.updateProjectionMatrix();
+
+          renderer.setSize(
+            innerWidth,
+            innerHeight
+          );
+        });
+
+        // ==========================================
+        // 14. ANIMATIELOOP
+        // ==========================================
+
+        function animate() {
+          requestAnimationFrame(animate);
+          renderer.render(scene, camera);
+        }
+
+        animate();
+
+      } catch (e) {
+
+        console.error(e);
+
+        error.style.display = 'block';
+        error.textContent =
+          'Er is een fout opgetreden: ' + e.message;
+      }
+
+    })();
+  </script>
+
+</body>
+</html>
